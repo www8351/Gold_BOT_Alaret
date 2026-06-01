@@ -59,3 +59,9 @@ class TestRoutes:
         client = await aiohttp_client(app_with_state())
         resp = await client.get("/chart.png", params={"token": TOKEN})
         assert resp.status == 404
+
+    async def test_health_no_token(self, aiohttp_client):
+        client = await aiohttp_client(app_with_state())
+        resp = await client.get("/health")          # no token — Uptime-Kuma probe
+        assert resp.status == 200
+        assert (await resp.json())["status"] == "ok"

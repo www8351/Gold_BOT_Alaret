@@ -8,6 +8,7 @@ aiohttp
 anthropic
 apscheduler
 mplfinance
+psutil
 # MetaTrader5 is Windows-only — PEP 508 environment marker skips install on Linux/macOS Docker.
 # On non-Windows hosts the bot routes all requests to TwelveData fallback automatically.
 MetaTrader5; platform_system == "Windows"

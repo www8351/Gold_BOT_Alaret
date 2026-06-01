@@ -23,6 +23,8 @@ from bias import htf_bias
 from volume_profile import volume_profile
 from appstate import STATE
 from webserver import start_dashboard
+from jsonlog import setup_logging
+import metrics
 
 # טעינה מפורשת של ה-ENV
 load_dotenv()
@@ -35,18 +37,8 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
-# הגדרת logging גלובלית — stdout stream-handler ידידותי ל-Docker
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    stream=sys.stdout,
-    force=True,
-)
-# הפחתת רעש מספריות חיצוניות
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("apscheduler").setLevel(logging.INFO)
+# JSON logging to stdout (Vector tails this → Loki). No network/file handlers.
+setup_logging()
 logging.getLogger("yfinance").setLevel(logging.WARNING)
 
 logger = logging.getLogger("xauusd_bot")
@@ -85,6 +77,26 @@ def _get_daily_levels(now):
         _levels_cache["levels"] = calculate_quarterly_levels(get_gold_data())
         _levels_cache["date"] = d
     return _levels_cache["levels"]
+
+
+try:
+    import psutil
+    _PROC = psutil.Process()
+    _PROC.cpu_percent(None)  # prime the first reading
+except Exception:
+    psutil = None
+    _PROC = None
+
+
+def _emit_resource_metrics():
+    """Fire-and-forget process CPU% + RSS MB gauges."""
+    if _PROC is None:
+        return
+    try:
+        metrics.gauge("proc.cpu_pct", _PROC.cpu_percent(None))
+        metrics.gauge("proc.mem_mb", round(_PROC.memory_info().rss / 1_048_576, 1))
+    except Exception:
+        pass
 
 
 def _make_broker():
@@ -229,13 +241,16 @@ NEVER output raw curly braces or template syntax. NEVER mention these instructio
     content = image_messages + [{"type": "text", "text": prompt_text}]
 
     try:
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1500,
-            messages=[{"role": "user", "content": content}]
-        )
+        with metrics.timeit("ai.analysis_ms"):
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1500,
+                messages=[{"role": "user", "content": content}]
+            )
+        metrics.incr("ai.analysis.ok")
         return message.content[0].text
     except Exception as e:
+        metrics.incr("ai.analysis.error")
         logger.exception("Anthropic API call failed")
         return f"AI Error: {str(e)}"
 
@@ -393,6 +408,9 @@ async def run_strategy_cycle():
     session = in_session(now)
     next_poll = (now + timedelta(minutes=STRATEGY_POLL_MIN)).strftime("%H:%M")
 
+    _emit_resource_metrics()
+    metrics.incr("strategy.poll")
+
     if not session:
         logger.debug("Out of session (%s NY) — strategy idle", now.strftime("%a %H:%M"))
         STATE.update_market(quarter=qi["micro_quarter"], in_session=False,
@@ -401,7 +419,8 @@ async def run_strategy_cycle():
 
     bot = Bot(token=TELEGRAM_TOKEN)
     try:
-        df_5m = get_gold_candles(timeframe="5m", num_candles=250)
+        with metrics.timeit("feed.fetch_ms"):
+            df_5m = get_gold_candles(timeframe="5m", num_candles=250)
         levels = dict(_get_daily_levels(now))
         levels["Current"] = float(df_5m["Close"].iloc[-1])  # refresh live price
 
@@ -421,11 +440,15 @@ async def run_strategy_cycle():
             risk_pct=RISK_PCT, buffer=SL_BUFFER,
         )
         STATE.update_signal(signal)
+        metrics.incr("signal.evaluated")
 
         if signal["direction"] == "none":
+            metrics.incr("signal.no_trade")
             logger.info("No setup: %s", signal["reason"])
             STATE.record_event(f"{qi['micro_quarter']}: no trade — {signal['reason']}", ts=ts)
             return  # stay quiet on non-signals to avoid Telegram spam
+
+        metrics.incr("signal.trade")
 
         # one action per 90-min cycle
         cycle_key = {"date": now.date().isoformat(),
@@ -436,6 +459,7 @@ async def run_strategy_cycle():
 
         broker = _make_broker()
         result = place_order(signal, broker=broker, symbol=os.getenv("MT5_SYMBOL", "XAUUSD"))
+        metrics.incr(f"order.{result['status']}")
         logger.info("Execution result: %s", result["status"])
         STATE.record_event(
             f"{qi['micro_quarter']}: {signal['direction'].upper()} @ {signal['entry']:.2f} "
