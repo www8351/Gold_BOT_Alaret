@@ -5,6 +5,8 @@ requests
 python-dotenv
 python-telegram-bot
 aiohttp
+fastapi
+uvicorn[standard]
 anthropic
 apscheduler
 mplfinance

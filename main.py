@@ -25,6 +25,9 @@ from appstate import STATE
 from webserver import start_dashboard
 from jsonlog import setup_logging
 import metrics
+import uvicorn
+from api import create_api
+from botconfig import CONFIG
 
 # טעינה מפורשת של ה-ENV
 load_dotenv()
@@ -64,6 +67,10 @@ STRATEGY_POLL_MIN = int(os.getenv("STRATEGY_POLL_MIN", "5"))  # poll cadence (mi
 DASHBOARD_HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
 DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "8080"))
 DASHBOARD_TOKEN = os.getenv("DASHBOARD_TOKEN", "")  # required to enable the dashboard
+
+# ── FastAPI backend (for the Next.js frontend on 3005) ────────────────
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
+API_PORT = int(os.getenv("API_PORT", "8000"))
 
 _cycle_guard = CycleGuard()
 _levels_cache = {"date": None, "levels": None}
@@ -256,6 +263,9 @@ NEVER output raw curly braces or template syntax. NEVER mention these instructio
 
 async def run_agent():
     """הפונקציה המרכזית להרצת הסוכן"""
+    if not CONFIG.get("daily_report_enabled"):
+        logger.info("Daily AI report disabled via config — skipping")
+        return
     logger.info("🚀 Agent is starting...")
     bot = Bot(token=TELEGRAM_TOKEN)
 
@@ -411,6 +421,11 @@ async def run_strategy_cycle():
     _emit_resource_metrics()
     metrics.incr("strategy.poll")
 
+    if not CONFIG.get("strategy_enabled"):
+        logger.debug("Strategy disabled via config — skipping")
+        STATE.update_market(quarter=qi["micro_quarter"], in_session=session, next_poll=next_poll)
+        return
+
     if not session:
         logger.debug("Out of session (%s NY) — strategy idle", now.strftime("%a %H:%M"))
         STATE.update_market(quarter=qi["micro_quarter"], in_session=False,
@@ -437,7 +452,8 @@ async def run_strategy_cycle():
         balance = get_account_balance()
         signal = evaluate_setup(
             df_5m, levels, now=now, balance=balance,
-            risk_pct=RISK_PCT, buffer=SL_BUFFER,
+            risk_pct=CONFIG.get("risk_pct"), buffer=CONFIG.get("sl_buffer"),
+            min_rr=CONFIG.get("min_rr"),
         )
         STATE.update_signal(signal)
         metrics.incr("signal.evaluated")
@@ -500,6 +516,14 @@ async def main():
     else:
         logger.warning("DASHBOARD_TOKEN not set — dashboard disabled (set it to enable)")
 
+    # ── FastAPI backend (port 8000) for the Next.js dashboard ─────────
+    api_app = create_api(STATE, CONFIG, chart_path="gold_chart.png")
+    api_server = uvicorn.Server(uvicorn.Config(
+        api_app, host=API_HOST, port=API_PORT, log_level="warning", lifespan="off",
+    ))
+    api_task = asyncio.create_task(api_server.serve())
+    logger.info("🔌 FastAPI backend on http://%s:%d (CORS → :3005)", API_HOST, API_PORT)
+
     logger.info("⏱  Running initial agent execution (startup test)...")
     try:
         await run_agent()
@@ -539,6 +563,8 @@ async def main():
         scheduler.shutdown(wait=False)
         if dash_runner is not None:
             await dash_runner.cleanup()
+        api_server.should_exit = True
+        api_task.cancel()
         logger.info("👋 Bot stopped cleanly.")
 
 

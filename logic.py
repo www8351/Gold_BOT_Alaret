@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 INITIAL_BACKOFF_SEC = 2  # 2s, 4s, 8s exponential
 
+# Which data engine served the most recent successful fetch ("MT5"/"TwelveData").
+# Read by the API's /api/status. None until the first fetch.
+LAST_ENGINE = None
+
 
 # ════════════════════════════════════════════════════════════════════
 # MT5 PRIMARY ENGINE — Linux/Docker safe (guarded import)
@@ -149,6 +153,8 @@ def get_mt5_candles(
         ).sort_index()
 
         logger.info("MT5: fetched %d %s candles for %s", len(out), timeframe, symbol)
+        global LAST_ENGINE
+        LAST_ENGINE = "MT5"
         return out
     finally:
         try:
@@ -261,6 +267,8 @@ def get_twelvedata_candles(
             logger.info(
                 "TwelveData: fetched %d %s candles for %s", len(out), interval, symbol
             )
+            global LAST_ENGINE
+            LAST_ENGINE = "TwelveData"
             return out
 
         except Exception as e:
