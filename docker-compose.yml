@@ -33,13 +33,11 @@ services:
       - statsd-exporter
 
   frontend:
-    image: nginx:alpine
+    build: ./frontend          # Vite React + Tailwind dashboard (Component 2)
     container_name: xauusd-frontend
     restart: unless-stopped
     ports:
       - "8081:80"
-    volumes:
-      - ./observability/frontend:/usr/share/nginx/html:ro
     depends_on:
       - bot
 
