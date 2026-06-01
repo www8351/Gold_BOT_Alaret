@@ -6,3 +6,5 @@ Research/
 continue.md
 bot_dev.log
 *.png
+statsd_capture.txt
+compose_up.log

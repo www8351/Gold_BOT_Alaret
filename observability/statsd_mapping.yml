@@ -1,0 +1,22 @@
+# statsd_exporter mapping for the bot's StatsD metrics (prefix "xauusd").
+# Timers (|ms) become summaries; counters (|c) and gauges (|g) pass through.
+mappings:
+  - match: "xauusd.feed.fetch_ms"
+    name: "xauusd_feed_fetch_ms"
+    timer_type: summary
+  - match: "xauusd.ai.analysis_ms"
+    name: "xauusd_ai_analysis_ms"
+    timer_type: summary
+  - match: "xauusd.proc.*"
+    name: "xauusd_proc_${1}"
+  - match: "xauusd.signal.*"
+    name: "xauusd_signal_total"
+    labels:
+      kind: "${1}"
+  - match: "xauusd.order.*"
+    name: "xauusd_order_total"
+    labels:
+      status: "${1}"
+  # default: keep dotted names as underscores
+  - match: "xauusd.*"
+    name: "xauusd_${1}"

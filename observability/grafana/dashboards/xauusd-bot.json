@@ -1,0 +1,53 @@
+{
+  "title": "XAUUSD Bot Observability",
+  "uid": "xauusd-bot",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Process CPU %",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 0 },
+      "targets": [ { "expr": "xauusd_proc_cpu_pct", "legendFormat": "cpu%" } ]
+    },
+    {
+      "id": 2,
+      "title": "Process Memory (MB)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 },
+      "targets": [ { "expr": "xauusd_proc_mem_mb", "legendFormat": "rss mb" } ]
+    },
+    {
+      "id": 3,
+      "title": "Feed fetch latency (ms)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 0 },
+      "targets": [ { "expr": "xauusd_feed_fetch_ms", "legendFormat": "fetch ms" } ]
+    },
+    {
+      "id": 4,
+      "title": "Signals & orders (rate)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 7 },
+      "targets": [
+        { "expr": "sum by (kind) (rate(xauusd_signal_total[5m]))", "legendFormat": "signal {{kind}}" },
+        { "expr": "sum by (status) (rate(xauusd_order_total[5m]))", "legendFormat": "order {{status}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Bot logs",
+      "type": "logs",
+      "datasource": { "type": "loki" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 7 },
+      "targets": [ { "expr": "{service=\"xauusd-bot\"}" } ]
+    }
+  ]
+}

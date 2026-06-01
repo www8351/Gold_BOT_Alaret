@@ -1,0 +1,34 @@
+# Vector: tail the bot container's stdout (JSON logs), forward to Loki.
+# Reads via the Docker API (socket mounted read-only) — no change to the bot.
+
+[sources.bot_logs]
+type = "docker_logs"
+include_containers = ["xauusd-bot"]
+
+[transforms.parse]
+type = "remap"
+inputs = ["bot_logs"]
+# The bot emits one JSON object per line (jsonlog.JsonFormatter). Parse it;
+# if a line isn't JSON (rare third-party output), keep it as a raw msg.
+source = '''
+parsed, err = parse_json(.message)
+if err == null {
+  . = merge(., parsed)
+} else {
+  .msg = .message
+  .level = "RAW"
+}
+.service = "xauusd-bot"
+'''
+
+[sinks.loki]
+type = "loki"
+inputs = ["parse"]
+endpoint = "http://loki:3100"
+encoding.codec = "json"
+remove_label_fields = true
+
+[sinks.loki.labels]
+service = "{{ service }}"
+level = "{{ level }}"
+logger = "{{ logger }}"

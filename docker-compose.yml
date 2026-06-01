@@ -1,5 +1,19 @@
+# Decoupled observability stack for the XAUUSD Quarterly-Theory bot.
+#
+#   bot              → the Python bot (JSON logs to stdout, UDP StatsD metrics, /health)
+#   frontend         → static console (placeholder until the React redesign)
+#   log_shipper      → Vector: reads bot stdout (JSON) → Loki
+#   loki             → log store (queried by Grafana)
+#   statsd-exporter  → ingests the bot's UDP StatsD metrics, exposes them to Prometheus
+#   metrics_collector→ Prometheus: scrapes statsd-exporter
+#   observability_ui → Grafana: provisioned with Loki + Prometheus + example dashboard
+#   uptime_monitor   → Uptime Kuma: probes the bot's /health
+#
+# Bring up:  docker compose up -d
+# UIs:  bot 8080 · frontend 8081 · grafana 3000 · uptime 3001 · prometheus 9090
+
 services:
-  xauusd-bot:
+  bot:
     build: .
     container_name: xauusd-bot
     restart: unless-stopped
@@ -7,7 +21,107 @@ services:
       - .env
     environment:
       - TZ=Asia/Jerusalem
+      - DASHBOARD_HOST=0.0.0.0
+      - STATSD_HOST=statsd-exporter
+      - STATSD_PORT=9125
+      - METRICS_ENABLED=true
     ports:
-      - "8080:8080"   # dashboard (only served when DASHBOARD_TOKEN is set)
+      - "8080:8080"
     volumes:
       - ./Research:/app/Research:ro
+    depends_on:
+      - statsd-exporter
+
+  frontend:
+    image: nginx:alpine
+    container_name: xauusd-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    volumes:
+      - ./observability/frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - bot
+
+  log_shipper:
+    image: timberio/vector:0.40.0-debian
+    container_name: xauusd-vector
+    restart: unless-stopped
+    volumes:
+      - ./observability/vector.toml:/etc/vector/vector.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: xauusd-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.27.1
+    container_name: xauusd-statsd-exporter
+    restart: unless-stopped
+    command:
+      - "--statsd.mapping-config=/etc/statsd/statsd_mapping.yml"
+      - "--statsd.listen-udp=:9125"
+      - "--web.listen-address=:9102"
+    volumes:
+      - ./observability/statsd_mapping.yml:/etc/statsd/statsd_mapping.yml:ro
+    ports:
+      - "9102:9102"
+
+  metrics_collector:
+    image: prom/prometheus:v2.54.1
+    container_name: xauusd-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - statsd-exporter
+
+  observability_ui:
+    image: grafana/grafana:11.2.0
+    container_name: xauusd-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - loki
+      - metrics_collector
+
+  uptime_monitor:
+    image: louislam/uptime-kuma:1
+    container_name: xauusd-uptime
+    restart: unless-stopped
+    volumes:
+      - uptime-data:/app/data
+    ports:
+      - "3001:3001"
+    depends_on:
+      - bot
+
+volumes:
+  loki-data:
+  prometheus-data:
+  grafana-data:
+  uptime-data:
