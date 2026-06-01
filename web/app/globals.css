@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 222 33% 11%;     /* #131722 */
+  --foreground: 220 13% 84%;     /* #d1d4dc */
+  --card: 222 22% 15%;           /* #1e222d */
+  --muted: 222 16% 19%;
+  --muted-foreground: 220 6% 49%;/* #787b86 */
+  --border: 222 14% 20%;         /* #2a2e39 */
+  --primary: 187 92% 53%;        /* accent cyan */
+}
+
+* { border-color: hsl(var(--border)); }
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-variant-numeric: tabular-nums;
+}
