@@ -6,11 +6,16 @@ Runs in the bot's asyncio process so it reads the live appstate.STATE and
 from __future__ import annotations
 
 import base64
+import hmac
+import logging
 import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_ORIGINS = [
     "http://localhost:3005",
@@ -26,7 +31,19 @@ def _engine() -> str:
         return "unknown"
 
 
-def create_api(state, config, chart_path: str = "gold_chart.png") -> FastAPI:
+class ConnectMt5Request(BaseModel):
+    login: int
+    password: str
+    server: str
+
+
+def _check_token(request: Request, token: str) -> bool:
+    provided = request.query_params.get("token") or request.headers.get("X-Token") or ""
+    return hmac.compare_digest(str(provided), token)
+
+
+def create_api(state, config, chart_path: str = "gold_chart.png",
+               token: str = "") -> FastAPI:
     app = FastAPI(title="XAUUSD Bot API", version="1.0.0")
     app.add_middleware(
         CORSMiddleware,
@@ -77,5 +94,49 @@ def create_api(state, config, chart_path: str = "gold_chart.png") -> FastAPI:
             return config.update(body)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
+
+    @app.post("/api/connect-mt5")
+    def connect_mt5(payload: ConnectMt5Request, request: Request):
+        """Dynamically log in to MT5 with runtime credentials.
+
+        SAFETY: token-gated (reuses DASHBOARD_TOKEN), disabled when no token is
+        configured, and a success ARMS live trading. The password is forwarded to
+        mt5session only for mt5.initialize and is never logged nor echoed back.
+        """
+        if not token:
+            return JSONResponse(
+                {"error": "connect disabled: DASHBOARD_TOKEN not configured"},
+                status_code=503)
+        if not _check_token(request, token):
+            return JSONResponse({"error": "invalid token"}, status_code=401)
+
+        import mt5session  # lazy: keeps MetaTrader5 import off the module load path
+        result = mt5session.SESSION.connect(
+            login=payload.login, password=payload.password, server=payload.server)
+        if result.get("status") != "connected":
+            logger.warning("MT5 connect failed for login=%s server=%s",
+                           payload.login, payload.server)
+            return JSONResponse(result, status_code=502)
+        logger.warning("MT5 connect OK for login=%s server=%s — live ARMED",
+                       payload.login, payload.server)
+        return result
+
+    @app.post("/api/disconnect-mt5")
+    def disconnect_mt5(request: Request):
+        """Shut the runtime MT5 session down and disarm live trading.
+
+        Same token gate as connect; idempotent (safe when not connected).
+        """
+        if not token:
+            return JSONResponse(
+                {"error": "disconnect disabled: DASHBOARD_TOKEN not configured"},
+                status_code=503)
+        if not _check_token(request, token):
+            return JSONResponse({"error": "invalid token"}, status_code=401)
+
+        import mt5session
+        result = mt5session.SESSION.disconnect()
+        logger.warning("MT5 disconnected — live DISARMED")
+        return result
 
     return app

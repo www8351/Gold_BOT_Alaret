@@ -1,11 +1,15 @@
 """Tests for api.py — FastAPI backend for the Next.js dashboard."""
+import pytest
 from fastapi.testclient import TestClient
 
+import execution
+import mt5session
 from appstate import AppState
 from botconfig import BotConfig
 from api import create_api
 
 ORIGIN = "http://localhost:3005"
+TOKEN = "s3cr3t-dash-token"
 
 
 def make_state():
@@ -17,9 +21,46 @@ def make_state():
     return s
 
 
-def client(tmp_path, chart="missing.png"):
+def client(tmp_path, chart="missing.png", token=""):
     cfg = BotConfig(path=tmp_path / "config.json")
-    return TestClient(create_api(make_state(), cfg, chart_path=str(chart)))
+    return TestClient(create_api(make_state(), cfg, chart_path=str(chart), token=token))
+
+
+class _FakeAccount:
+    login = 555
+    server = "Broker-Live"
+    balance = 25000.0
+    currency = "USD"
+    name = "Tester"
+
+    def _asdict(self):
+        return {"login": self.login, "server": self.server,
+                "balance": self.balance, "currency": self.currency, "name": self.name}
+
+
+class _FakeMt5:
+    def __init__(self, init_ok=True):
+        self.init_ok = init_ok
+
+    def initialize(self, **kw):
+        return self.init_ok
+
+    def shutdown(self):
+        pass
+
+    def account_info(self):
+        return _FakeAccount() if self.init_ok else None
+
+    def last_error(self):
+        return (-6, "auth failed")
+
+
+@pytest.fixture
+def fake_mt5_ok(monkeypatch):
+    """Swap in a fresh in-memory session backed by a fake MT5 that logs in OK."""
+    monkeypatch.setattr(mt5session, "SESSION", mt5session.Mt5Session())
+    monkeypatch.setattr(mt5session, "_import_mt5", lambda: _FakeMt5(init_ok=True))
+    return mt5session.SESSION
 
 
 class TestStatus:
@@ -73,3 +114,86 @@ class TestConfig:
     def test_post_unknown_key_400(self, tmp_path):
         r = client(tmp_path).post("/api/config", json={"nope": 1})
         assert r.status_code == 400
+
+
+GOOD = {"login": 555, "password": "hunter2", "server": "Broker-Live"}
+
+
+class TestConnectMt5:
+    def test_disabled_when_no_token_configured(self, tmp_path, fake_mt5_ok):
+        # token unset => endpoint must refuse rather than run unauthenticated
+        r = client(tmp_path, token="").post("/api/connect-mt5", json=GOOD)
+        assert r.status_code == 503
+        assert execution.is_live_trading() is False
+
+    def test_missing_token_rejected(self, tmp_path, fake_mt5_ok):
+        r = client(tmp_path, token=TOKEN).post("/api/connect-mt5", json=GOOD)
+        assert r.status_code == 401
+        assert execution.is_live_trading() is False
+
+    def test_wrong_token_rejected(self, tmp_path, fake_mt5_ok):
+        r = client(tmp_path, token=TOKEN).post(
+            "/api/connect-mt5", json=GOOD, headers={"X-Token": "nope"})
+        assert r.status_code == 401
+
+    def test_valid_connect_arms_live_and_hides_password(self, tmp_path, fake_mt5_ok):
+        r = client(tmp_path, token=TOKEN).post(
+            "/api/connect-mt5", json=GOOD, headers={"X-Token": TOKEN})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["status"] == "connected"
+        assert body["login"] == 555
+        assert body["live_armed"] is True
+        assert "hunter2" not in r.text          # password never echoed
+        assert execution.is_live_trading() is True
+
+    def test_token_via_query_param_also_works(self, tmp_path, fake_mt5_ok):
+        r = client(tmp_path, token=TOKEN).post(
+            f"/api/connect-mt5?token={TOKEN}", json=GOOD)
+        assert r.status_code == 200
+
+    def test_bad_payload_422(self, tmp_path, fake_mt5_ok):
+        r = client(tmp_path, token=TOKEN).post(
+            "/api/connect-mt5", json={"login": "notint"}, headers={"X-Token": TOKEN})
+        assert r.status_code == 422
+        assert execution.is_live_trading() is False
+
+    def test_failed_login_does_not_arm(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(mt5session, "SESSION", mt5session.Mt5Session())
+        monkeypatch.setattr(mt5session, "_import_mt5", lambda: _FakeMt5(init_ok=False))
+        r = client(tmp_path, token=TOKEN).post(
+            "/api/connect-mt5", json=GOOD, headers={"X-Token": TOKEN})
+        assert r.status_code == 502
+        assert execution.is_live_trading() is False
+
+
+class TestDisconnectMt5:
+    def test_disabled_when_no_token_configured(self, tmp_path, fake_mt5_ok):
+        r = client(tmp_path, token="").post("/api/disconnect-mt5")
+        assert r.status_code == 503
+
+    def test_missing_token_rejected(self, tmp_path, fake_mt5_ok):
+        r = client(tmp_path, token=TOKEN).post("/api/disconnect-mt5")
+        assert r.status_code == 401
+
+    def test_wrong_token_rejected(self, tmp_path, fake_mt5_ok):
+        r = client(tmp_path, token=TOKEN).post(
+            "/api/disconnect-mt5", headers={"X-Token": "nope"})
+        assert r.status_code == 401
+
+    def test_disconnect_disarms_live(self, tmp_path, fake_mt5_ok):
+        c = client(tmp_path, token=TOKEN)
+        c.post("/api/connect-mt5", json=GOOD, headers={"X-Token": TOKEN})
+        assert execution.is_live_trading() is True
+        r = c.post("/api/disconnect-mt5", headers={"X-Token": TOKEN})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["connected"] is False
+        assert body["live_armed"] is False
+        assert execution.is_live_trading() is False
+
+    def test_disconnect_idempotent_when_not_connected(self, tmp_path, fake_mt5_ok):
+        r = client(tmp_path, token=TOKEN).post(
+            "/api/disconnect-mt5", headers={"X-Token": TOKEN})
+        assert r.status_code == 200
+        assert r.json()["connected"] is False

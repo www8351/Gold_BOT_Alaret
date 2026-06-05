@@ -5,6 +5,8 @@ import warnings
 import requests
 import pandas as pd
 
+import mt5session  # unified, process-wide MT5 connection state (feed + execution)
+
 # ביטול אזהרות מיותרות בטרמינל
 warnings.filterwarnings('ignore')
 
@@ -56,38 +58,21 @@ def _resolve_mt5_timeframe(tf: str):
 
 
 def _init_mt5() -> bool:
-    """
-    Initialize MT5 terminal. Reads MT5_LOGIN / MT5_PASSWORD / MT5_SERVER from env.
-    If all three present → login init. Else → empty init (uses last logged-in local terminal).
-    Returns True on success, False on any failure (with warning logged).
+    """Ensure the shared MT5 terminal is up via the unified session.
+
+    Delegates to mt5session.SESSION.acquire(), which reuses an active session
+    (dashboard connect OR a prior feed init) or lazily initializes from
+    MT5_LOGIN/PASSWORD/SERVER. This is the DATA-FEED path and never arms live
+    trading. Returns True on success, False on any failure.
     """
     if not MT5_AVAILABLE:
         return False
-
-    login = os.getenv("MT5_LOGIN")
-    password = os.getenv("MT5_PASSWORD")
-    server = os.getenv("MT5_SERVER")
-
     try:
-        if login and password and server:
-            try:
-                login_int = int(login)
-            except ValueError:
-                logger.warning("MT5_LOGIN must be int, got '%s' — skipping creds", login)
-                ok = mt5.initialize()
-            else:
-                ok = mt5.initialize(login=login_int, password=password, server=server)
-        else:
-            ok = mt5.initialize()
+        mt5session.SESSION.acquire(mt5=mt5)
+        return True
     except Exception as e:
-        logger.warning("mt5.initialize raised: %s", e)
+        logger.warning("MT5 acquire failed: %s", e)
         return False
-
-    if not ok:
-        logger.warning("mt5.initialize failed: %s", mt5.last_error())
-        return False
-
-    return True
 
 
 def get_mt5_candles(
@@ -116,51 +101,45 @@ def get_mt5_candles(
 
     tf_const = _resolve_mt5_timeframe(timeframe)
 
-    if not _init_mt5():
-        raise RuntimeError("MT5 initialize failed")
+    # Shared terminal handle — reuses the unified session, no per-fetch teardown.
+    handle = mt5session.SESSION.acquire(mt5=mt5)
 
-    try:
-        if not mt5.symbol_select(symbol, True):
-            raise RuntimeError(
-                f"MT5 symbol_select failed for '{symbol}': {mt5.last_error()}"
-            )
+    if not handle.symbol_select(symbol, True):
+        raise RuntimeError(
+            f"MT5 symbol_select failed for '{symbol}': {handle.last_error()}"
+        )
 
-        rates = mt5.copy_rates_from_pos(symbol, tf_const, 0, int(num_candles))
-        if rates is None or len(rates) == 0:
-            raise RuntimeError(
-                f"MT5 copy_rates_from_pos returned empty for {symbol} {timeframe}: "
-                f"{mt5.last_error()}"
-            )
+    rates = handle.copy_rates_from_pos(symbol, tf_const, 0, int(num_candles))
+    if rates is None or len(rates) == 0:
+        raise RuntimeError(
+            f"MT5 copy_rates_from_pos returned empty for {symbol} {timeframe}: "
+            f"{handle.last_error()}"
+        )
 
-        df = pd.DataFrame(rates)
-        df["time"] = pd.to_datetime(df["time"], unit="s", utc=True).dt.tz_convert(None)
-        df = df.set_index("time")
+    df = pd.DataFrame(rates)
+    df["time"] = pd.to_datetime(df["time"], unit="s", utc=True).dt.tz_convert(None)
+    df = df.set_index("time")
 
-        # Volume preference: real_volume if broker provides it, else tick_volume
-        if "real_volume" in df.columns and df["real_volume"].sum() > 0:
-            vol = df["real_volume"]
-        else:
-            vol = df["tick_volume"]
+    # Volume preference: real_volume if broker provides it, else tick_volume
+    if "real_volume" in df.columns and df["real_volume"].sum() > 0:
+        vol = df["real_volume"]
+    else:
+        vol = df["tick_volume"]
 
-        out = pd.DataFrame(
-            {
-                "Open":   df["open"].astype("float64"),
-                "High":   df["high"].astype("float64"),
-                "Low":    df["low"].astype("float64"),
-                "Close":  df["close"].astype("float64"),
-                "Volume": vol.astype("float64"),
-            }
-        ).sort_index()
+    out = pd.DataFrame(
+        {
+            "Open":   df["open"].astype("float64"),
+            "High":   df["high"].astype("float64"),
+            "Low":    df["low"].astype("float64"),
+            "Close":  df["close"].astype("float64"),
+            "Volume": vol.astype("float64"),
+        }
+    ).sort_index()
 
-        logger.info("MT5: fetched %d %s candles for %s", len(out), timeframe, symbol)
-        global LAST_ENGINE
-        LAST_ENGINE = "MT5"
-        return out
-    finally:
-        try:
-            mt5.shutdown()
-        except Exception:
-            pass
+    logger.info("MT5: fetched %d %s candles for %s", len(out), timeframe, symbol)
+    global LAST_ENGINE
+    LAST_ENGINE = "MT5"
+    return out
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -362,18 +341,14 @@ def get_account_balance(default: float = 10000.0) -> float:
     Prefers the live MT5 account balance; falls back to the ACCOUNT_BALANCE env
     var, then to `default`. Never raises — sizing must always get a number.
     """
-    if MT5_AVAILABLE and _init_mt5():
+    if MT5_AVAILABLE:
         try:
-            info = mt5.account_info()
+            handle = mt5session.SESSION.acquire(mt5=mt5)
+            info = handle.account_info()
             if info is not None:
                 return float(info.balance)
         except Exception as e:
-            logger.warning("mt5.account_info failed: %s", e)
-        finally:
-            try:
-                mt5.shutdown()
-            except Exception:
-                pass
+            logger.warning("mt5 balance read failed: %s", e)
     env = os.getenv("ACCOUNT_BALANCE")
     if env:
         try:

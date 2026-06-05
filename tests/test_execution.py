@@ -1,6 +1,7 @@
 """Tests for execution.py — order routing gated by LIVE_TRADING."""
 import pytest
 
+import execution
 from execution import place_order, is_live_trading, build_order_request
 
 
@@ -32,6 +33,27 @@ class TestIsLiveTrading:
     def test_false_for_zero(self, monkeypatch):
         monkeypatch.setenv("LIVE_TRADING", "0")
         assert is_live_trading() is False
+
+
+class TestRuntimeArm:
+    def test_arm_enables_live_without_env(self, monkeypatch):
+        monkeypatch.delenv("LIVE_TRADING", raising=False)
+        assert is_live_trading() is False
+        execution.arm_live()
+        assert execution.is_live_armed() is True
+        assert is_live_trading() is True       # armed overrides env-off
+
+    def test_disarm_restores_env_gate(self, monkeypatch):
+        monkeypatch.delenv("LIVE_TRADING", raising=False)
+        execution.arm_live()
+        execution.disarm_live()
+        assert execution.is_live_armed() is False
+        assert is_live_trading() is False
+
+    def test_env_true_still_live_when_not_armed(self, monkeypatch):
+        monkeypatch.setenv("LIVE_TRADING", "true")
+        assert execution.is_live_armed() is False
+        assert is_live_trading() is True
 
 
 class TestBuildOrderRequest:

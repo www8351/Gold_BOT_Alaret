@@ -517,7 +517,7 @@ async def main():
         logger.warning("DASHBOARD_TOKEN not set — dashboard disabled (set it to enable)")
 
     # ── FastAPI backend (port 8000) for the Next.js dashboard ─────────
-    api_app = create_api(STATE, CONFIG, chart_path="gold_chart.png")
+    api_app = create_api(STATE, CONFIG, chart_path="gold_chart.png", token=DASHBOARD_TOKEN)
     api_server = uvicorn.Server(uvicorn.Config(
         api_app, host=API_HOST, port=API_PORT, log_level="warning", lifespan="off",
     ))

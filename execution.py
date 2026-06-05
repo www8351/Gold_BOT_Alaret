@@ -14,8 +14,31 @@ logger = logging.getLogger(__name__)
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
+# Runtime live-arm flag. A successful dynamic MT5 connect (mt5session.connect)
+# arms order placement for the process WITHOUT touching the env var. This is an
+# OR with the env gate: either path being on means live. Defaults off.
+_LIVE_ARMED = False
+
+
+def arm_live() -> None:
+    """Arm live order placement at runtime (set by a successful MT5 connect)."""
+    global _LIVE_ARMED
+    _LIVE_ARMED = True
+    logger.warning("LIVE trading ARMED at runtime (MT5 session connected)")
+
+
+def disarm_live() -> None:
+    global _LIVE_ARMED
+    _LIVE_ARMED = False
+
+
+def is_live_armed() -> bool:
+    return _LIVE_ARMED
+
 
 def is_live_trading() -> bool:
+    if _LIVE_ARMED:
+        return True
     return os.getenv("LIVE_TRADING", "false").strip().lower() in _TRUTHY
 
 
