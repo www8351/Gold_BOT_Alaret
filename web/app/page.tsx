@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Activity, Gauge, Radio, Target, Wifi, WifiOff, ShieldAlert, Power, Lock } from "lucide-react";
+import { Activity, Gauge, Radio, Target, Wifi, WifiOff, ShieldAlert, Power } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,12 +56,11 @@ export default function Dashboard() {
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
 
-  // MT5 live session (real money). Token + creds live only in component state;
-  // password is cleared the moment a connect attempt returns.
+  // MT5 live session (real money). Creds live only in component state; password
+  // is cleared the moment a connect attempt returns. No token gate (disabled).
   const [mt5, setMt5] = useState<Mt5Status | null>(null);
   const [mt5Busy, setMt5Busy] = useState(false);
   const [mt5Err, setMt5Err] = useState<string | null>(null);
-  const [token, setToken] = useState("");
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [server, setServer] = useState("");
@@ -125,12 +124,11 @@ export default function Dashboard() {
   async function armLive() {
     setMt5Err(null);
     const loginNum = Number(login);
-    if (!token) { setMt5Err("token required"); return; }
     if (!Number.isInteger(loginNum) || loginNum <= 0) { setMt5Err("login must be a number"); return; }
     if (!password || !server) { setMt5Err("password and server required"); return; }
     setMt5Busy(true);
     try {
-      const res = await connectMt5(loginNum, password, server, token);
+      const res = await connectMt5(loginNum, password, server);
       setMt5(res);
     } catch (e) {
       setMt5Err(e instanceof Error ? e.message : "connect failed");
@@ -144,7 +142,7 @@ export default function Dashboard() {
     setMt5Err(null);
     setMt5Busy(true);
     try {
-      setMt5(await disconnectMt5(token));
+      setMt5(await disconnectMt5());
     } catch (e) {
       setMt5Err(e instanceof Error ? e.message : "disconnect failed");
     } finally {
@@ -292,16 +290,11 @@ export default function Dashboard() {
 
         <div className="mb-2 flex items-start gap-2 rounded-md border border-amber/40 bg-amber/10 px-3 py-2 text-xs text-amber">
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>Connecting logs in to MetaTrader 5 and <b>arms live order placement</b>. Real funds. Token-gated — needs the dashboard token. Password is sent once and never stored.</span>
+          <span>Connecting logs in to MetaTrader 5 and <b>arms live order placement</b>. Real funds. Password is sent once and never stored. No token — keep this backend bound to localhost only.</span>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Lock className="h-3 w-3 shrink-0" />
-            <Input className="text-left" type="password" placeholder="Dashboard token"
-              value={token} onChange={(e) => setToken(e.target.value)} />
-          </label>
-          <Input className="text-left" type="text" inputMode="numeric" placeholder="MT5 login"
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Input className="text-left" type="text" inputMode="numeric" placeholder="MT5 login (ID)"
             value={login} onChange={(e) => setLogin(e.target.value)} />
           <Input className="text-left" type="password" placeholder="MT5 password"
             value={password} onChange={(e) => setPassword(e.target.value)} />

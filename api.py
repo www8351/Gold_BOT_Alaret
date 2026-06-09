@@ -99,17 +99,14 @@ def create_api(state, config, chart_path: str = "gold_chart.png",
     def connect_mt5(payload: ConnectMt5Request, request: Request):
         """Dynamically log in to MT5 with runtime credentials.
 
-        SAFETY: token-gated (reuses DASHBOARD_TOKEN), disabled when no token is
-        configured, and a success ARMS live trading. The password is forwarded to
-        mt5session only for mt5.initialize and is never logged nor echoed back.
-        """
-        if not token:
-            return JSONResponse(
-                {"error": "connect disabled: DASHBOARD_TOKEN not configured"},
-                status_code=503)
-        if not _check_token(request, token):
-            return JSONResponse({"error": "invalid token"}, status_code=401)
+        Token gate DISABLED by request — only login/password/server are needed.
+        A success ARMS live trading. The password is forwarded to mt5session only
+        for mt5.initialize and is never logged nor echoed back.
 
+        SECURITY: with no token, anyone who can reach this endpoint can arm live
+        trading and submit MT5 credentials. Keep API_HOST bound to 127.0.0.1
+        (localhost only) — do NOT expose :8000 on 0.0.0.0 / the public network.
+        """
         import mt5session  # lazy: keeps MetaTrader5 import off the module load path
         result = mt5session.SESSION.connect(
             login=payload.login, password=payload.password, server=payload.server)
@@ -125,15 +122,8 @@ def create_api(state, config, chart_path: str = "gold_chart.png",
     def disconnect_mt5(request: Request):
         """Shut the runtime MT5 session down and disarm live trading.
 
-        Same token gate as connect; idempotent (safe when not connected).
+        Token gate DISABLED by request; idempotent (safe when not connected).
         """
-        if not token:
-            return JSONResponse(
-                {"error": "disconnect disabled: DASHBOARD_TOKEN not configured"},
-                status_code=503)
-        if not _check_token(request, token):
-            return JSONResponse({"error": "invalid token"}, status_code=401)
-
         import mt5session
         result = mt5session.SESSION.disconnect()
         logger.warning("MT5 disconnected — live DISARMED")

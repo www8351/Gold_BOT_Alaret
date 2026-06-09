@@ -56,9 +56,9 @@ export async function postConfig(patch: Partial<BotConfig>): Promise<BotConfig> 
 }
 
 // --- MT5 live session (real money) ---------------------------------------
-// connect ARMS live trading; disconnect DISARMS. Both are token-gated by the
-// backend (DASHBOARD_TOKEN). The password is sent once and never stored client
-// side. The token rides as a query param so the next.config proxy forwards it.
+// connect ARMS live trading; disconnect DISARMS. Token gate is DISABLED by
+// request — only login/password/server are sent. The password is sent once and
+// never stored client side.
 
 export interface Mt5Account {
   login?: number;
@@ -80,8 +80,8 @@ export interface Mt5Status {
   code?: number;
 }
 
-async function postMt5(path: string, token: string, body?: unknown): Promise<Mt5Status> {
-  const r = await fetch(`/api/${path}?token=${encodeURIComponent(token)}`, {
+async function postMt5(path: string, body?: unknown): Promise<Mt5Status> {
+  const r = await fetch(`/api/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
@@ -92,11 +92,11 @@ async function postMt5(path: string, token: string, body?: unknown): Promise<Mt5
 }
 
 export function connectMt5(
-  login: number, password: string, server: string, token: string
+  login: number, password: string, server: string
 ): Promise<Mt5Status> {
-  return postMt5("connect-mt5", token, { login, password, server });
+  return postMt5("connect-mt5", { login, password, server });
 }
 
-export function disconnectMt5(token: string): Promise<Mt5Status> {
-  return postMt5("disconnect-mt5", token);
+export function disconnectMt5(): Promise<Mt5Status> {
+  return postMt5("disconnect-mt5");
 }
