@@ -120,25 +120,21 @@ GOOD = {"login": 555, "password": "hunter2", "server": "Broker-Live"}
 
 
 class TestConnectMt5:
-    def test_disabled_when_no_token_configured(self, tmp_path, fake_mt5_ok):
-        # token unset => endpoint must refuse rather than run unauthenticated
+    # Token gate is disabled by request: only login/password/server are needed.
+    def test_connects_without_token_configured(self, tmp_path, fake_mt5_ok):
         r = client(tmp_path, token="").post("/api/connect-mt5", json=GOOD)
-        assert r.status_code == 503
-        assert execution.is_live_trading() is False
+        assert r.status_code == 200
+        assert r.json()["status"] == "connected"
+        assert execution.is_live_trading() is True
 
-    def test_missing_token_rejected(self, tmp_path, fake_mt5_ok):
+    def test_connects_with_token_configured_but_none_sent(self, tmp_path, fake_mt5_ok):
+        # even when a token is configured, none is required to connect now
         r = client(tmp_path, token=TOKEN).post("/api/connect-mt5", json=GOOD)
-        assert r.status_code == 401
-        assert execution.is_live_trading() is False
-
-    def test_wrong_token_rejected(self, tmp_path, fake_mt5_ok):
-        r = client(tmp_path, token=TOKEN).post(
-            "/api/connect-mt5", json=GOOD, headers={"X-Token": "nope"})
-        assert r.status_code == 401
+        assert r.status_code == 200
+        assert r.json()["live_armed"] is True
 
     def test_valid_connect_arms_live_and_hides_password(self, tmp_path, fake_mt5_ok):
-        r = client(tmp_path, token=TOKEN).post(
-            "/api/connect-mt5", json=GOOD, headers={"X-Token": TOKEN})
+        r = client(tmp_path, token="").post("/api/connect-mt5", json=GOOD)
         assert r.status_code == 200
         body = r.json()
         assert body["status"] == "connected"
@@ -147,45 +143,32 @@ class TestConnectMt5:
         assert "hunter2" not in r.text          # password never echoed
         assert execution.is_live_trading() is True
 
-    def test_token_via_query_param_also_works(self, tmp_path, fake_mt5_ok):
-        r = client(tmp_path, token=TOKEN).post(
-            f"/api/connect-mt5?token={TOKEN}", json=GOOD)
-        assert r.status_code == 200
-
     def test_bad_payload_422(self, tmp_path, fake_mt5_ok):
-        r = client(tmp_path, token=TOKEN).post(
-            "/api/connect-mt5", json={"login": "notint"}, headers={"X-Token": TOKEN})
+        r = client(tmp_path, token="").post(
+            "/api/connect-mt5", json={"login": "notint"})
         assert r.status_code == 422
         assert execution.is_live_trading() is False
 
     def test_failed_login_does_not_arm(self, tmp_path, monkeypatch):
         monkeypatch.setattr(mt5session, "SESSION", mt5session.Mt5Session())
         monkeypatch.setattr(mt5session, "_import_mt5", lambda: _FakeMt5(init_ok=False))
-        r = client(tmp_path, token=TOKEN).post(
-            "/api/connect-mt5", json=GOOD, headers={"X-Token": TOKEN})
+        r = client(tmp_path, token="").post("/api/connect-mt5", json=GOOD)
         assert r.status_code == 502
         assert execution.is_live_trading() is False
 
 
 class TestDisconnectMt5:
-    def test_disabled_when_no_token_configured(self, tmp_path, fake_mt5_ok):
+    # Token gate disabled: disconnect needs no token.
+    def test_disconnects_without_token(self, tmp_path, fake_mt5_ok):
         r = client(tmp_path, token="").post("/api/disconnect-mt5")
-        assert r.status_code == 503
-
-    def test_missing_token_rejected(self, tmp_path, fake_mt5_ok):
-        r = client(tmp_path, token=TOKEN).post("/api/disconnect-mt5")
-        assert r.status_code == 401
-
-    def test_wrong_token_rejected(self, tmp_path, fake_mt5_ok):
-        r = client(tmp_path, token=TOKEN).post(
-            "/api/disconnect-mt5", headers={"X-Token": "nope"})
-        assert r.status_code == 401
+        assert r.status_code == 200
+        assert r.json()["connected"] is False
 
     def test_disconnect_disarms_live(self, tmp_path, fake_mt5_ok):
-        c = client(tmp_path, token=TOKEN)
-        c.post("/api/connect-mt5", json=GOOD, headers={"X-Token": TOKEN})
+        c = client(tmp_path, token="")
+        c.post("/api/connect-mt5", json=GOOD)
         assert execution.is_live_trading() is True
-        r = c.post("/api/disconnect-mt5", headers={"X-Token": TOKEN})
+        r = c.post("/api/disconnect-mt5")
         assert r.status_code == 200
         body = r.json()
         assert body["connected"] is False
@@ -193,7 +176,6 @@ class TestDisconnectMt5:
         assert execution.is_live_trading() is False
 
     def test_disconnect_idempotent_when_not_connected(self, tmp_path, fake_mt5_ok):
-        r = client(tmp_path, token=TOKEN).post(
-            "/api/disconnect-mt5", headers={"X-Token": TOKEN})
+        r = client(tmp_path, token="").post("/api/disconnect-mt5")
         assert r.status_code == 200
         assert r.json()["connected"] is False

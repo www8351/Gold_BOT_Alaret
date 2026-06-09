@@ -54,3 +54,49 @@ export async function postConfig(patch: Partial<BotConfig>): Promise<BotConfig> 
   if (!r.ok) throw new Error(`config POST HTTP ${r.status}`);
   return r.json();
 }
+
+// --- MT5 live session (real money) ---------------------------------------
+// connect ARMS live trading; disconnect DISARMS. Token gate is DISABLED by
+// request — only login/password/server are sent. The password is sent once and
+// never stored client side.
+
+export interface Mt5Account {
+  login?: number;
+  server?: string;
+  balance?: number;
+  currency?: string;
+  name?: string;
+}
+
+export interface Mt5Status {
+  status?: string;        // "connected" | "error" (connect) — absent on disconnect
+  connected?: boolean;    // present on disconnect status dict
+  mode?: string;          // "disconnected" | "feed" | "armed"
+  login?: number | null;
+  server?: string | null;
+  account?: Mt5Account | null;
+  live_armed?: boolean;
+  reason?: string;        // present on error
+  code?: number;
+}
+
+async function postMt5(path: string, body?: unknown): Promise<Mt5Status> {
+  const r = await fetch(`/api/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = (await r.json().catch(() => ({}))) as Mt5Status;
+  if (!r.ok) throw new Error(data.reason || data.status || `HTTP ${r.status}`);
+  return data;
+}
+
+export function connectMt5(
+  login: number, password: string, server: string
+): Promise<Mt5Status> {
+  return postMt5("connect-mt5", { login, password, server });
+}
+
+export function disconnectMt5(): Promise<Mt5Status> {
+  return postMt5("disconnect-mt5");
+}
