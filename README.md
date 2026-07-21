@@ -2,9 +2,9 @@
 
 # 🤖 Smart-Money AI Trading Engine
 
-### _aka **AlgoFlow** — trade **with** the algorithm, not against it._
+### _aka **AlgoFlow** trade **with** the algorithm, not against it._
 
-**An AI-powered signal engine that reads the market the way institutions do — Quarterly Theory, Smart Money Concepts, FVGs, and liquidity — then delivers a precise, ready-to-execute trade plan straight to your Telegram.**
+**An AI-powered signal engine that reads the market the way institutions do Quarterly Theory, Smart Money Concepts, FVGs, and liquidity then delivers a precise, ready-to-execute trade plan straight to your Telegram.**
 
 <br/>
 
@@ -38,13 +38,13 @@
 
 > **Most retail traders draw lines on a chart. Smart money draws liquidity.**
 
-Traditional trading bots chase lagging indicators and arbitrary support/resistance — the same retail map that institutions trade *against*. **Smart-Money AI Trading Engine** flips the script.
+Traditional trading bots chase lagging indicators and arbitrary support/resistance the same retail map that institutions trade *against*. **Smart-Money AI Trading Engine** flips the script.
 
 This engine fuses a **deterministic algorithmic core** with **AI vision analysis**:
 
-- 🧮 A hard-coded **Quarterly Theory** module computes the institutional reference levels — Yearly, Monthly, Weekly, and Daily Opens (TYO / TMO / TWO / TDO) — the price anchors algorithms actually pivot around.
+- 🧮 A hard-coded **Quarterly Theory** module computes the institutional reference levels Yearly, Monthly, Weekly, and Daily Opens (TYO / TMO / TWO / TDO) the price anchors algorithms actually pivot around.
 - 👁️ A **Claude vision model** then reads a live, TradingView-style chart against your own documented Smart-Money playbook to spot **Fair Value Gaps, liquidity sweeps, order blocks, and premium/discount zones**.
-- 📨 The result is a single, structured, **execution-ready signal** — bias, point of interest, entry type, stop, target — delivered with a chart snapshot to Telegram.
+- 📨 The result is a single, structured, **execution-ready signal** bias, point of interest, entry type, stop, target delivered with a chart snapshot to Telegram.
 
 📈 **The philosophy:** stop guessing tops and bottoms. Trade **time and price** alongside the algorithm.
 
@@ -52,12 +52,12 @@ This engine fuses a **deterministic algorithmic core** with **AI vision analysis
 
 ## ✨ Features
 
-- 🤖 **Automated Signal Generation** — Deep, repeatable market analysis runs on schedule and outputs a complete trade plan with **zero manual charting**.
-- 🧭 **Comprehensive Market Context** — Every signal explains the **Bullish / Bearish** state with layered reasoning: a **macro bias** (yearly/Quarterly) and a **micro bias** (weekly/daily) grounded in **Time & Price**.
-- 🎯 **Points of Interest (POI)** — Surfaces the zones that matter: **Premium / Discount** ranges, **unmitigated FVGs**, and resting **liquidity pools**.
-- 🎚️ **Precise Order Execution** — Recommends the exact entry mechanic — **Limit / Market / Buy Stop / Sell Stop** — with a defined **Stop Loss** and a **Take Profit that targets opposing liquidity**, plus the **R:R** and a **confidence score**.
-- 🖼️ **Beautiful Visual Output** — A clean, dark-theme **TradingView-style candlestick snapshot** is rendered and delivered **inline with a formatted alert** — no broken images, no clutter.
-- 🥇 **Gold-First, Built for ICT/SMC** — Tuned for **XAUUSD** as the flagship instrument, designed around Inner Circle Trader / Smart Money methodology.
+- 🤖 **Automated Signal Generation** Deep, repeatable market analysis runs on schedule and outputs a complete trade plan with **zero manual charting**.
+- 🧭 **Comprehensive Market Context** Every signal explains the **Bullish / Bearish** state with layered reasoning: a **macro bias** (yearly/Quarterly) and a **micro bias** (weekly/daily) grounded in **Time & Price**.
+- 🎯 **Points of Interest (POI)** Surfaces the zones that matter: **Premium / Discount** ranges, **unmitigated FVGs**, and resting **liquidity pools**.
+- 🎚️ **Precise Order Execution** Recommends the exact entry mechanic **Limit / Market / Buy Stop / Sell Stop** — with a defined **Stop Loss** and a **Take Profit that targets opposing liquidity**, plus the **R:R** and a **confidence score**.
+- 🖼️ **Beautiful Visual Output** A clean, dark-theme **TradingView-style candlestick snapshot** is rendered and delivered **inline with a formatted alert** no broken images, no clutter.
+- 🥇 **Gold-First, Built for ICT/SMC** Tuned for **XAUUSD** as the flagship instrument, designed around Inner Circle Trader / Smart Money methodology.
 
 ---
 
@@ -173,7 +173,7 @@ python main.py
 docker-compose up -d
 ```
 
-> 🗂️ Drop your personal Smart-Money strategy notes/screenshots into the **`Research/`** folder — the engine feeds them to the AI as ground-truth context.
+> 🗂️ Drop your personal Smart-Money strategy notes/screenshots into the **`Research/`** folder: the engine feeds them to the AI as ground-truth context.
 
 ---
 
