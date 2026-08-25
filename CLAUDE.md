@@ -11,7 +11,7 @@ and (when enabled) **MetaTrader 5**, and a **web dashboard** shows live state.
 pip install -r requirements.txt
 python main.py                     # local (Windows = MT5 primary, else TwelveData)
 docker-compose up -d               # 24/7 container
-python -m pytest                   # full test suite (currently 90 tests)
+python -m pytest                   # full test suite (currently 143 tests)
 ```
 
 On startup the bot: runs one AI report immediately, starts the dashboard (if
